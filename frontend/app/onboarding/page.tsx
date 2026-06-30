@@ -23,6 +23,7 @@ function OnboardingPage() {
 
   const [step, setStep] = useState(1);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [pendingPlanId, setPendingPlanId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -67,12 +68,21 @@ function OnboardingPage() {
         }),
       };
 
+      if (pendingPlanId) {
+        localStorage.setItem("plan_id", pendingPlanId);
+        localStorage.setItem("user_id", userId);
+        router.push(`/dashboard?plan_id=${pendingPlanId}&user_id=${userId}`);
+        return;
+      }
       const result = await api.createPlan(body);
       if (result.warnings.length > 0) {
         setWarnings(result.warnings);
-        return; // Show warnings, user confirms to proceed
+        setPendingPlanId(result.plan_id);
+        return;
       }
-      router.push(`/dashboard?plan_id=${result.plan_id}`);
+      localStorage.setItem("plan_id", result.plan_id);
+      localStorage.setItem("user_id", userId);
+      router.push(`/dashboard?plan_id=${result.plan_id}&user_id=${userId}`);
     } catch (e: any) {
       setError(e.message);
     } finally {

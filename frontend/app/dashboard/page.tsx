@@ -16,8 +16,8 @@ const SESSION_COLORS: Record<string, string> = {
 
 function DashboardPage() {
   const params = useSearchParams();
-  const planId = params.get("plan_id") ?? "";
-  const userId = params.get("user_id") ?? "";
+  const planId = params.get("plan_id") ?? (typeof window !== "undefined" ? localStorage.getItem("plan_id") : "") ?? "";
+  const userId = params.get("user_id") ?? (typeof window !== "undefined" ? localStorage.getItem("user_id") : "") ?? "";
 
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [sessions, setSessions] = useState<PlannedSession[]>([]);
