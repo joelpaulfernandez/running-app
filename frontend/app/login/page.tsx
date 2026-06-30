@@ -1,6 +1,19 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+
 export default function LoginPage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const planId = localStorage.getItem("plan_id");
+    const userId = localStorage.getItem("user_id");
+    if (planId && userId) {
+      router.replace(`/dashboard?plan_id=${planId}&user_id=${userId}`);
+    }
+  }, []);
+
   const handleStravaLogin = () => {
     window.location.href = `${process.env.NEXT_PUBLIC_API_URL}/strava/login`;
   };
