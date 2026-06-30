@@ -6,8 +6,9 @@ Output: 2-4 sentence inline text card.
 """
 from typing import Optional
 from langgraph.graph import StateGraph, END
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
+import os
 import json
 
 
@@ -18,7 +19,12 @@ No cheerleading. No filler. Just the why and what to expect."""
 
 
 def build_coach_graph():
-    llm = ChatAnthropic(model="claude-sonnet-4-6", max_tokens=300)
+    llm = ChatOpenAI(
+        model="deepseek-v4-flash",
+        api_key=os.environ["DEEPSEEK_API_KEY"],
+        base_url="https://api.deepseek.com",
+        max_tokens=300,
+    )
 
     def explain_node(state: dict) -> dict:
         trigger = state["trigger"]

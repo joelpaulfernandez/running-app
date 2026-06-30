@@ -27,6 +27,19 @@ export default function LoginPage() {
         <p className="text-xs text-gray-500 mt-4 text-center">
           Strava is required to sign in. Your activity data powers your adaptive plan.
         </p>
+
+        {process.env.NODE_ENV === "development" && (
+          <button
+            onClick={async () => {
+              const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/dev/mock-user`, { method: "POST" });
+              const { user_id } = await res.json();
+              window.location.href = `/onboarding?user_id=${user_id}`;
+            }}
+            className="w-full mt-3 py-2 rounded-xl border border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-500 text-xs transition-colors"
+          >
+            Skip login (dev)
+          </button>
+        )}
       </div>
     </main>
   );

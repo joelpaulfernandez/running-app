@@ -153,7 +153,7 @@ def get_dashboard(plan_id: str, db: Session = Depends(get_db)):
     today = date.today()
     next_7 = [
         s for s in plan.sessions
-        if today <= s.scheduled_date <= today.replace(day=today.day + 7)
+        if today <= s.scheduled_date <= today + __import__("datetime").timedelta(days=7)
     ]
 
     activities = db.query(Activity).filter(Activity.user_id == plan.user_id).all()

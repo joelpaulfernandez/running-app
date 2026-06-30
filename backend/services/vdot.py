@@ -9,39 +9,36 @@ from typing import Optional
 # Jack Daniels' VDOT table (race_time_seconds -> vdot) — interpolated via formula
 def pace_to_vdot(distance_km: float, time_seconds: int) -> float:
     """Calculate VDOT from a race performance."""
-    velocity = distance_km / (time_seconds / 60)  # km/min
-    # Daniels' formula: VO2 at pace
-    pct_vo2max = 0.8 + 0.1894393 * math.exp(-0.012778 * time_seconds / 60) + \
-                 0.2989558 * math.exp(-0.1932605 * time_seconds / 60)
+    t = time_seconds / 60  # minutes
+    velocity = (distance_km * 1000) / t  # m/min — Daniels formula requires m/min
+    pct_vo2max = 0.8 + 0.1894393 * math.exp(-0.012778 * t) + \
+                 0.2989558 * math.exp(-0.1932605 * t)
     vo2 = -4.60 + 0.182258 * velocity + 0.000104 * velocity ** 2
-    return vo2 / pct_vo2max
+    return max(vo2 / pct_vo2max, 20.0)
 
 
 def vdot_to_easy_pace_min_per_km(vdot: float) -> float:
-    """Easy/recovery pace: 59-74% VO2max. Returns min/km."""
-    # 65% VO2max midpoint for easy runs
-    target_pct = 0.65
-    velocity = _velocity_at_pct_vo2max(vdot, target_pct)
-    return 1.0 / velocity  # min/km
+    """Easy/recovery pace: 65% VO2max. Returns min/km."""
+    velocity = _velocity_at_pct_vo2max(vdot, 0.65)  # m/min
+    return 1000.0 / velocity  # min/km
 
 
 def vdot_to_tempo_pace_min_per_km(vdot: float) -> float:
     """Lactate threshold pace: ~88% VO2max. Returns min/km."""
     velocity = _velocity_at_pct_vo2max(vdot, 0.88)
-    return 1.0 / velocity
+    return 1000.0 / velocity
 
 
 def vdot_to_interval_pace_min_per_km(vdot: float) -> float:
     """Interval/VO2max pace: ~98% VO2max. Returns min/km."""
     velocity = _velocity_at_pct_vo2max(vdot, 0.98)
-    return 1.0 / velocity
+    return 1000.0 / velocity
 
 
 def _velocity_at_pct_vo2max(vdot: float, pct: float) -> float:
-    """Invert Daniels' formula to get velocity (km/min) at a given %VO2max."""
+    """Invert Daniels' formula to get velocity in m/min at a given %VO2max."""
     target_vo2 = vdot * pct
-    # Quadratic: 0.000104*v^2 + 0.182258*v - 4.60 = target_vo2
-    # 0.000104v² + 0.182258v - (4.60 + target_vo2) = 0
+    # Quadratic: 0.000104*v^2 + 0.182258*v - (4.60 + target_vo2) = 0
     a = 0.000104
     b = 0.182258
     c = -(4.60 + target_vo2)
