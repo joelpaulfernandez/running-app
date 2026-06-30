@@ -24,6 +24,8 @@ function DashboardPage() {
   const [unlinked, setUnlinked] = useState<UnlinkedActivity[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [tab, setTab] = useState<"upcoming" | "plan" | "mileage" | "acwr">("upcoming");
+  const [linkingActivity, setLinkingActivity] = useState<UnlinkedActivity | null>(null);
+  const [linking, setLinking] = useState(false);
 
   useEffect(() => {
     if (!planId) return;
@@ -31,6 +33,22 @@ function DashboardPage() {
     api.getPlanSessions(planId).then(setSessions);
     if (userId) api.getUnlinkedActivities(userId).then(setUnlinked);
   }, [planId, userId]);
+
+  const linkActivity = async (sessionId: string) => {
+    if (!linkingActivity) return;
+    setLinking(true);
+    await api.linkActivity(planId, sessionId, linkingActivity.id);
+    const [d, s, u] = await Promise.all([
+      api.getDashboard(planId),
+      api.getPlanSessions(planId),
+      api.getUnlinkedActivities(userId),
+    ]);
+    setDashboard(d);
+    setSessions(s);
+    setUnlinked(u);
+    setLinkingActivity(null);
+    setLinking(false);
+  };
 
   const syncStrava = async () => {
     if (!userId) return;
@@ -204,9 +222,48 @@ function DashboardPage() {
                   <p className="text-sm font-medium">{a.date} · {a.distance_km} km</p>
                   <p className="text-xs text-gray-500 capitalize">{a.source}</p>
                 </div>
-                <button className="text-xs text-orange-400 hover:text-orange-300">Link</button>
+                <button
+                  onClick={() => setLinkingActivity(a)}
+                  className="text-xs text-orange-400 hover:text-orange-300"
+                >Link</button>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+      {/* Link activity modal */}
+      {linkingActivity && (
+        <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-2xl w-full max-w-md p-6">
+            <h2 className="font-semibold text-white mb-1">Link to a session</h2>
+            <p className="text-xs text-gray-400 mb-4">
+              Activity: {linkingActivity.date} · {linkingActivity.distance_km} km
+            </p>
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {sessions
+                .filter(s => !s.linked_activity_id && s.type !== "rest")
+                .map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => linkActivity(s.id)}
+                    disabled={linking}
+                    className="w-full flex items-center justify-between bg-gray-800 hover:bg-gray-700 disabled:opacity-40 rounded-xl px-4 py-3 text-left transition-colors"
+                  >
+                    <div>
+                      <p className="text-sm font-medium capitalize">{s.type.replace("_", " ")}</p>
+                      <p className="text-xs text-gray-400">{s.date} · Wk {s.week}</p>
+                    </div>
+                    <p className="text-sm text-gray-300">{s.distance_km} km</p>
+                  </button>
+                ))}
+              {sessions.filter(s => !s.linked_activity_id && s.type !== "rest").length === 0 && (
+                <p className="text-sm text-gray-500 text-center py-4">No unlinked sessions.</p>
+              )}
+            </div>
+            <button
+              onClick={() => setLinkingActivity(null)}
+              className="w-full mt-4 py-2 rounded-xl border border-gray-700 text-gray-400 hover:text-gray-200 text-sm transition-colors"
+            >Cancel</button>
           </div>
         </div>
       )}

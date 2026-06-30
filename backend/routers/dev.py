@@ -1,5 +1,6 @@
 """Dev-only routes — never import in production."""
-from fastapi import APIRouter, Depends
+import os
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from models.db import User
 from database import get_db
@@ -9,6 +10,8 @@ router = APIRouter(prefix="/dev", tags=["dev"])
 
 @router.post("/mock-user")
 def create_mock_user(db: Session = Depends(get_db)):
+    if os.environ.get("ENVIRONMENT") != "development":
+        raise HTTPException(404, "Not found")
     user = db.query(User).filter(User.strava_athlete_id == "dev_mock").first()
     if not user:
         user = User(
