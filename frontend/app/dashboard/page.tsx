@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { api, DashboardData, PlannedSession, UnlinkedActivity } from "@/lib/api";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
@@ -14,7 +14,7 @@ const SESSION_COLORS: Record<string, string> = {
   rest: "bg-gray-700",
 };
 
-export default function DashboardPage() {
+function DashboardPage() {
   const params = useSearchParams();
   const planId = params.get("plan_id") ?? "";
   const userId = params.get("user_id") ?? "";
@@ -212,4 +212,8 @@ export default function DashboardPage() {
       )}
     </main>
   );
+}
+
+export default function Page() {
+  return <Suspense><DashboardPage /></Suspense>;
 }

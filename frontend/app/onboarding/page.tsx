@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 
@@ -16,7 +16,7 @@ function secondsFromTime(h: string, m: string, s: string) {
   return parseInt(h || "0") * 3600 + parseInt(m || "0") * 60 + parseInt(s || "0");
 }
 
-export default function OnboardingPage() {
+function OnboardingPage() {
   const router = useRouter();
   const params = useSearchParams();
   const userId = params.get("user_id") ?? "";
@@ -290,4 +290,8 @@ export default function OnboardingPage() {
       </div>
     </main>
   );
+}
+
+export default function Page() {
+  return <Suspense><OnboardingPage /></Suspense>;
 }
