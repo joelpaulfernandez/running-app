@@ -3,16 +3,133 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { api, DashboardData, PlannedSession, UnlinkedActivity } from "@/lib/api";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
-const SESSION_COLORS: Record<string, string> = {
-  easy: "bg-green-700",
-  tempo: "bg-yellow-600",
-  long: "bg-blue-700",
-  interval: "bg-red-700",
-  time_trial: "bg-purple-700",
-  rest: "bg-gray-700",
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+function fmtPace(pace: number) {
+  const min = Math.floor(pace);
+  const sec = Math.round((pace - min) * 60);
+  return `${min}:${sec.toString().padStart(2, "0")}`;
+}
+
+function dayLabel(dateStr: string) {
+  // Parse as local date to avoid UTC offset shifting the day
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short" });
+}
+
+function greetingTime() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+const TYPE_LABELS: Record<string, string> = {
+  easy:       "Easy run",
+  tempo:      "Tempo run",
+  long:       "Long run",
+  interval:   "Intervals",
+  time_trial: "Time trial",
+  rest:       "Rest",
 };
+
+// terracotta tint for highlighted row
+const TERRA_BG  = "rgba(180, 95, 55, 0.07)";
+const TERRA_CLR = "oklch(0.65 0.13 40)";
+const MUTED     = "oklch(0.5 0.02 60)";
+const TEXT      = "oklch(0.28 0.02 60)";
+const BORDER    = "oklch(0.9 0.012 80)";
+
+// ─── sub-components ─────────────────────────────────────────────────────────
+
+
+type NavKey = "today" | "plan" | "journal" | "progress";
+
+function Sidebar({
+  nav, setNav, syncing, onSync,
+}: {
+  nav: NavKey;
+  setNav: (k: NavKey) => void;
+  syncing: boolean;
+  onSync: () => void;
+}) {
+  const items: { key: NavKey; label: string }[] = [
+    { key: "today",    label: "Today"         },
+    { key: "plan",     label: "Training plan" },
+    { key: "journal",  label: "Journal"       },
+    { key: "progress", label: "Progress"      },
+  ];
+  return (
+    <aside style={{
+      width: 260, flexShrink: 0,
+      borderRight: `1px solid ${BORDER}`,
+      padding: "36px 24px",
+      display: "flex", flexDirection: "column", gap: 0,
+      background: "oklch(0.97 0.008 80)",
+      position: "sticky", top: 0,
+      height: "100vh", overflowY: "auto",
+    }}>
+      <div style={{
+        fontFamily: "var(--font-serif)", fontSize: 26,
+        color: TEXT, letterSpacing: "-0.01em", marginBottom: 36,
+      }}>
+        Tempo
+      </div>
+
+      <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {items.map(item => (
+          <button
+            key={item.key}
+            onClick={() => setNav(item.key)}
+            style={{
+              textAlign: "left", border: "none", cursor: "pointer",
+              fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 500,
+              padding: "9px 12px", borderRadius: 8,
+              color: nav === item.key ? TERRA_CLR : MUTED,
+              background: nav === item.key ? TERRA_BG : "transparent",
+              transition: "color 0.15s, background 0.15s",
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+
+      <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
+        <button
+          onClick={onSync}
+          disabled={syncing}
+          style={{
+            background: "none", border: `1px solid ${BORDER}`, borderRadius: 8,
+            padding: "8px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500,
+            color: syncing ? MUTED : TEXT, opacity: syncing ? 0.5 : 1,
+            fontFamily: "var(--font-sans)", display: "flex", alignItems: "center", gap: 6,
+          }}
+        >
+          <svg
+            style={{ width: 12, height: 12, animation: syncing ? "spin 1s linear infinite" : "none" }}
+            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          {syncing ? "Syncing…" : "Sync Strava"}
+        </button>
+
+        <p style={{
+          fontFamily: "var(--font-serif)", fontStyle: "italic",
+          fontSize: 13, color: MUTED, lineHeight: 1.7,
+        }}>
+          &ldquo;Slow is smooth,<br />smooth is fast.&rdquo;
+        </p>
+      </div>
+    </aside>
+  );
+}
+
+// ─── main page ───────────────────────────────────────────────────────────────
 
 function DashboardPage() {
   const params = useSearchParams();
@@ -20,12 +137,12 @@ function DashboardPage() {
   const userId = params.get("user_id") ?? (typeof window !== "undefined" ? localStorage.getItem("user_id") : "") ?? "";
 
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
-  const [sessions, setSessions] = useState<PlannedSession[]>([]);
-  const [unlinked, setUnlinked] = useState<UnlinkedActivity[]>([]);
-  const [syncing, setSyncing] = useState(false);
-  const [tab, setTab] = useState<"upcoming" | "plan" | "mileage" | "acwr">("upcoming");
+  const [sessions, setSessions]   = useState<PlannedSession[]>([]);
+  const [unlinked, setUnlinked]   = useState<UnlinkedActivity[]>([]);
+  const [syncing, setSyncing]     = useState(false);
+  const [nav, setNav]             = useState<NavKey>("today");
   const [linkingActivity, setLinkingActivity] = useState<UnlinkedActivity | null>(null);
-  const [linking, setLinking] = useState(false);
+  const [linking, setLinking]     = useState(false);
 
   useEffect(() => {
     if (!planId) return;
@@ -34,18 +151,20 @@ function DashboardPage() {
     if (userId) api.getUnlinkedActivities(userId).then(setUnlinked);
   }, [planId, userId]);
 
-  const linkActivity = async (sessionId: string) => {
-    if (!linkingActivity) return;
-    setLinking(true);
-    await api.linkActivity(planId, sessionId, linkingActivity.id);
+  const refresh = async () => {
     const [d, s, u] = await Promise.all([
       api.getDashboard(planId),
       api.getPlanSessions(planId),
       api.getUnlinkedActivities(userId),
     ]);
-    setDashboard(d);
-    setSessions(s);
-    setUnlinked(u);
+    setDashboard(d); setSessions(s); setUnlinked(u);
+  };
+
+  const linkActivity = async (sessionId: string) => {
+    if (!linkingActivity) return;
+    setLinking(true);
+    await api.linkActivity(planId, sessionId, linkingActivity.id);
+    await refresh();
     setLinkingActivity(null);
     setLinking(false);
   };
@@ -54,220 +173,406 @@ function DashboardPage() {
     if (!userId) return;
     setSyncing(true);
     await api.syncStrava(userId);
-    const [d, s, u] = await Promise.all([
-      api.getDashboard(planId),
-      api.getPlanSessions(planId),
-      api.getUnlinkedActivities(userId),
-    ]);
-    setDashboard(d);
-    setSessions(s);
-    setUnlinked(u);
+    await refresh();
     setSyncing(false);
   };
 
-  const acwrColor = {
-    ok: "text-green-400",
-    moderate: "text-yellow-400",
-    high: "text-red-400",
-  }[dashboard?.acwr_status ?? "ok"];
+  // ── derived data ─────────────────────────────────────────────────────────
+  const today = new Date().toISOString().slice(0, 10);
+  const upcoming = dashboard?.upcoming_7_days ?? [];
+  const sessionsByDate = Object.fromEntries(upcoming.map(s => [s.date, s]));
+  const todaySession = sessionsByDate[today] ?? upcoming[0] ?? null;
+  const thisWeekKm = upcoming.reduce((sum, s) => sum + s.distance_km, 0).toFixed(1);
 
-  return (
-    <main className="min-h-screen bg-gray-950 text-white">
-      <header className="border-b border-gray-800 px-6 py-4 flex items-center justify-between">
-        <h1 className="font-bold text-lg">Running Coach</h1>
-        <button
-          onClick={syncStrava}
-          disabled={syncing}
-          className="text-sm text-orange-400 hover:text-orange-300 disabled:opacity-40"
-        >
-          {syncing ? "Syncing..." : "Sync Strava"}
-        </button>
+  // weekly goal: from mileage data, last entry
+  const mileage = dashboard?.weekly_mileage ?? [];
+  const latestWeek = mileage[mileage.length - 1];
+  const weeklyGoal = latestWeek?.planned_km
+    ? Math.round((latestWeek.actual_km / latestWeek.planned_km) * 100)
+    : null;
+
+  // calm note
+  const longRun = upcoming.find(s => s.type === "long");
+  const calmNote = longRun
+    ? `You have a ${longRun.distance_km} km long run on ${dayLabel(longRun.date)} — keep it easy until then.`
+    : "A steady week ahead. Stay consistent and trust the process.";
+
+  // 7-day window for the week ahead
+  const weekWindow = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() + i);
+    return d.toISOString().slice(0, 10);
+  });
+
+  const acwrStatus = dashboard?.acwr_status ?? "ok";
+  const acwrColor = acwrStatus === "high" ? "#ef4444" : acwrStatus === "moderate" ? "#f59e0b" : "#22c55e";
+
+  // ── styles ────────────────────────────────────────────────────────────────
+  const card: React.CSSProperties = {
+    background: "#fff",
+    border: `1px solid ${BORDER}`,
+    borderRadius: 16,
+    padding: "28px 32px",
+  };
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: 11, fontWeight: 500, letterSpacing: "0.08em",
+    textTransform: "uppercase", color: MUTED,
+  };
+
+  // ── views ─────────────────────────────────────────────────────────────────
+
+  const TodayView = (
+    <div style={{ display: "flex", flexDirection: "column", gap: 36 }}>
+
+      {/* Header */}
+      <header style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <span style={{ ...labelStyle }}>
+          {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+        </span>
+        <h1 style={{
+          fontFamily: "var(--font-serif)", fontSize: 46,
+          color: TEXT, letterSpacing: "-0.02em", lineHeight: 1.05,
+        }}>
+          {greetingTime()}.
+        </h1>
+        <p style={{ fontSize: 15, color: MUTED, marginTop: 4, lineHeight: 1.5 }}>
+          {dashboard ? calmNote : "Loading your plan…"}
+        </p>
       </header>
 
-      {/* VDOT + ACWR summary bar */}
-      {dashboard && (
-        <div className="grid grid-cols-2 gap-4 px-6 py-4 border-b border-gray-800">
-          <div className="bg-gray-900 rounded-xl p-4">
-            <p className="text-xs text-gray-500 mb-1">VDOT</p>
-            <p className="text-2xl font-bold">{dashboard.current_vdot?.toFixed(1)}</p>
-          </div>
-          <div className="bg-gray-900 rounded-xl p-4">
-            <p className="text-xs text-gray-500 mb-1">ACWR</p>
-            <p className={`text-2xl font-bold ${acwrColor}`}>
-              {dashboard.acwr?.toFixed(2) ?? "—"}
-            </p>
-            <p className={`text-xs ${acwrColor}`}>{dashboard.acwr_status}</p>
-          </div>
+      {/* Unlinked banner */}
+      {unlinked.length > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          background: "rgba(180, 95, 55, 0.05)", border: `1px solid rgba(180, 95, 55, 0.2)`,
+          borderRadius: 12, padding: "12px 16px",
+        }}>
+          <p style={{ fontSize: 13, color: MUTED }}>
+            <span style={{ color: TERRA_CLR, fontWeight: 500 }}>
+              {unlinked.length} unmatched {unlinked.length === 1 ? "run" : "runs"}
+            </span>{" "}from Strava
+          </p>
+          <button
+            onClick={() => setLinkingActivity(unlinked[0])}
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              fontSize: 12, fontWeight: 500, color: TERRA_CLR,
+            }}
+          >
+            Match →
+          </button>
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex border-b border-gray-800 px-6">
-        {(["upcoming", "plan", "mileage", "acwr"] as const).map(t => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`py-3 px-4 text-sm font-medium capitalize transition-colors border-b-2 ${
-              tab === t ? "border-orange-500 text-white" : "border-transparent text-gray-500 hover:text-gray-300"
-            }`}
-          >
-            {t === "upcoming" ? "Next 7 days" : t === "acwr" ? "Load" : t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
-        ))}
-      </div>
-
-      <div className="px-6 py-6">
-        {tab === "upcoming" && dashboard && (
-          <div className="space-y-3">
-            {dashboard.upcoming_7_days.map((s, i) => (
-              <div key={i} className="flex items-center gap-4 bg-gray-900 rounded-xl p-4">
-                <div className={`w-2 h-10 rounded-full ${SESSION_COLORS[s.type] ?? "bg-gray-600"}`} />
-                <div>
-                  <p className="font-medium capitalize">{s.type.replace("_", " ")}</p>
-                  <p className="text-sm text-gray-400">{s.date} · {s.distance_km} km</p>
-                </div>
-              </div>
-            ))}
-            {dashboard.upcoming_7_days.length === 0 && (
-              <p className="text-gray-500 text-center py-8">No sessions in the next 7 days.</p>
-            )}
-          </div>
-        )}
-
-        {tab === "plan" && (
-          <div className="space-y-2">
-            {sessions.map(s => (
-              <div
-                key={s.id}
-                className={`flex items-start gap-4 bg-gray-900 rounded-xl p-4 ${s.is_missed ? "opacity-50" : ""}`}
-              >
-                <div className={`w-2 h-10 mt-1 rounded-full flex-shrink-0 ${SESSION_COLORS[s.type] ?? "bg-gray-600"}`} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium capitalize">{s.type.replace("_", " ")}</p>
-                    {s.is_missed && <span className="text-xs text-red-400 bg-red-900/30 px-2 py-0.5 rounded-full">Missed</span>}
-                    {s.linked_activity_id && <span className="text-xs text-green-400 bg-green-900/30 px-2 py-0.5 rounded-full">Done</span>}
-                  </div>
-                  <p className="text-sm text-gray-400">{s.date} · Wk {s.week} · {s.phase}</p>
-                  <p className="text-xs text-gray-500 mt-1 truncate">{s.description}</p>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <p className="font-medium">{s.distance_km} km</p>
-                  {s.pace_target && (
-                    <p className="text-xs text-gray-400">{s.pace_target.toFixed(2)} /km</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {tab === "mileage" && dashboard && (
-          <div>
-            <h2 className="text-sm text-gray-400 mb-4">Weekly mileage: actual vs planned</h2>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={dashboard.weekly_mileage} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
-                <XAxis
-                  dataKey="week_start"
-                  tick={{ fontSize: 10, fill: "#6b7280" }}
-                  tickFormatter={v => v.slice(5)}
-                />
-                <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} />
-                <Tooltip
-                  contentStyle={{ background: "#111827", border: "1px solid #374151", borderRadius: 8 }}
-                  labelStyle={{ color: "#9ca3af" }}
-                />
-                <Bar dataKey="planned_km" fill="#374151" name="Planned" radius={[2, 2, 0, 0]} />
-                <Bar dataKey="actual_km" fill="#f97316" name="Actual" radius={[2, 2, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-
-        {tab === "acwr" && dashboard && (
-          <div className="space-y-4">
-            <div className={`rounded-xl p-4 border ${
-              dashboard.acwr_status === "high"
-                ? "bg-red-900/20 border-red-700"
-                : dashboard.acwr_status === "moderate"
-                ? "bg-yellow-900/20 border-yellow-700"
-                : "bg-green-900/20 border-green-700"
-            }`}>
-              <p className="text-sm font-medium text-gray-300">Acute:Chronic Load Ratio</p>
-              <p className={`text-3xl font-bold mt-1 ${acwrColor}`}>
-                {dashboard.acwr?.toFixed(2) ?? "Not enough data"}
-              </p>
-              <p className="text-xs text-gray-400 mt-2">
-                {dashboard.acwr === null
-                  ? "Need 28 days of history. Using 10% weekly cap in the meantime."
-                  : dashboard.acwr_status === "high"
-                  ? "Above 1.5 — next week's load will be capped to reduce injury risk."
-                  : dashboard.acwr_status === "moderate"
-                  ? "Between 1.3–1.5. Training load is high but within range."
-                  : "Below 1.3. Load is well managed."}
+      {/* Today's run card */}
+      {todaySession && (
+        <div style={card}>
+          <div style={{ ...labelStyle, marginBottom: 12 }}>Today&apos;s run</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <h2 style={{
+                fontFamily: "var(--font-serif)", fontSize: 26,
+                color: TEXT, letterSpacing: "-0.01em",
+              }}>
+                {TYPE_LABELS[todaySession.type] ?? todaySession.type} &middot; {todaySession.distance_km} km
+              </h2>
+              <p style={{ fontSize: 14, color: MUTED }}>
+                {todaySession.date === today ? "Scheduled for today" : `Scheduled for ${dayLabel(todaySession.date)}`}
               </p>
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* Unlinked activities */}
-      {unlinked.length > 0 && (
-        <div className="px-6 pb-8">
-          <h2 className="text-sm font-medium text-gray-400 mb-3">Unlinked activities</h2>
-          <div className="space-y-2">
-            {unlinked.slice(0, 5).map(a => (
-              <div key={a.id} className="flex items-center justify-between bg-gray-900 rounded-xl p-4">
-                <div>
-                  <p className="text-sm font-medium">{a.date} · {a.distance_km} km</p>
-                  <p className="text-xs text-gray-500 capitalize">{a.source}</p>
-                </div>
-                <button
-                  onClick={() => setLinkingActivity(a)}
-                  className="text-xs text-orange-400 hover:text-orange-300"
-                >Link</button>
-              </div>
-            ))}
+            <button
+              style={{
+                background: TERRA_CLR, color: "#fff", border: "none",
+                borderRadius: 999, padding: "11px 26px",
+                fontSize: 14, fontWeight: 500, cursor: "pointer",
+                fontFamily: "var(--font-sans)", whiteSpace: "nowrap", flexShrink: 0,
+              }}
+            >
+              Begin
+            </button>
           </div>
         </div>
       )}
-      {/* Link activity modal */}
+
+      {/* Stat strip */}
+      {dashboard && (
+        <div style={{
+          display: "grid", gridTemplateColumns: "1fr 1fr 1fr",
+          background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 16, overflow: "hidden",
+        }}>
+          {[
+            { label: "This week",    value: `${thisWeekKm} km`                                },
+            { label: "VDOT",         value: dashboard.current_vdot?.toFixed(1) ?? "—"         },
+            { label: "Weekly goal",  value: weeklyGoal !== null ? `${weeklyGoal}%` : "—"      },
+          ].map((stat, i) => (
+            <div
+              key={stat.label}
+              style={{
+                padding: "26px 28px",
+                borderLeft: i > 0 ? `1px solid ${BORDER}` : "none",
+                display: "flex", flexDirection: "column", gap: 6,
+              }}
+            >
+              <span style={{ ...labelStyle }}>{stat.label}</span>
+              <span style={{
+                fontFamily: "var(--font-serif)", fontSize: 36,
+                color: TEXT, letterSpacing: "-0.02em", lineHeight: 1,
+              }}>
+                {stat.value}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Week ahead */}
+      {dashboard && (
+        <section>
+          <h3 style={{ ...labelStyle, marginBottom: 10 }}>The week ahead</h3>
+          <div style={{
+            background: "#fff", border: `1px solid ${BORDER}`,
+            borderRadius: 16, overflow: "hidden",
+          }}>
+            {weekWindow.map((dateStr, i) => {
+              const s = sessionsByDate[dateStr];
+              const isToday = dateStr === today;
+              const isRest  = !s || s.type === "rest";
+              return (
+                <div
+                  key={dateStr}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 20,
+                    padding: "16px 24px",
+                    borderBottom: i < weekWindow.length - 1 ? `1px solid ${BORDER}` : "none",
+                    background: isToday ? TERRA_BG : "transparent",
+                  }}
+                >
+                  <span style={{
+                    fontSize: 12, fontWeight: 500, width: 96, flexShrink: 0,
+                    color: isToday ? TERRA_CLR : MUTED,
+                    letterSpacing: "0.02em",
+                  }}>
+                    {dayLabel(dateStr)}{isToday ? " · Today" : ""}
+                  </span>
+                  <span style={{
+                    fontSize: 14, flex: 1,
+                    color: isToday ? TERRA_CLR : isRest ? MUTED : TEXT,
+                  }}>
+                    {isRest ? "Rest" : (TYPE_LABELS[s.type] ?? s.type)}
+                  </span>
+                  <span style={{ fontSize: 13, color: isRest ? MUTED : (isToday ? TERRA_CLR : MUTED) }}>
+                    {isRest ? "—" : `${s.distance_km} km`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+
+  const PlanView = (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <h2 style={{ fontFamily: "var(--font-serif)", fontSize: 26, color: TEXT }}>Training plan</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {sessions.map(s => (
+          <div
+            key={s.id}
+            style={{
+              ...card,
+              padding: "14px 20px",
+              display: "flex", alignItems: "center", gap: 16,
+              opacity: s.is_missed ? 0.45 : 1,
+            }}
+          >
+            <div style={{
+              width: 3, height: 32, borderRadius: 2, flexShrink: 0,
+              background: s.type === "tempo" ? TERRA_CLR
+                        : s.type === "long"  ? "oklch(0.55 0.12 240)"
+                        : s.type === "interval" ? "#ef4444"
+                        : "oklch(0.7 0.1 150)",
+            }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                <span style={{
+                  fontSize: 11, fontWeight: 500, letterSpacing: "0.06em",
+                  textTransform: "uppercase", color: TERRA_CLR,
+                  background: TERRA_BG, padding: "2px 8px", borderRadius: 6,
+                }}>
+                  {(TYPE_LABELS[s.type] ?? s.type)}
+                </span>
+                {s.is_missed && (
+                  <span style={{ fontSize: 11, color: "#ef4444", background: "rgba(239,68,68,0.08)", padding: "2px 8px", borderRadius: 6 }}>
+                    Missed
+                  </span>
+                )}
+                {s.linked_activity_id && (
+                  <span style={{ fontSize: 11, color: "#22c55e", background: "rgba(34,197,94,0.08)", padding: "2px 8px", borderRadius: 6 }}>
+                    Done
+                  </span>
+                )}
+              </div>
+              <p style={{ fontSize: 12, color: MUTED }}>
+                {s.date} · Wk {s.week} · <span style={{ textTransform: "capitalize" }}>{s.phase}</span>
+              </p>
+            </div>
+            <div style={{ textAlign: "right", flexShrink: 0 }}>
+              <p style={{ fontFamily: "var(--font-serif)", fontSize: 18, color: TEXT }}>{s.distance_km} km</p>
+              {s.pace_target && (
+                <p style={{ fontSize: 12, color: MUTED }}>{fmtPace(s.pace_target)}/km</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const JournalView = (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 300, gap: 8 }}>
+      <p style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: 22, color: MUTED }}>Coming soon.</p>
+      <p style={{ fontSize: 14, color: MUTED }}>Training journal is on the way.</p>
+    </div>
+  );
+
+  const ProgressView = (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <h2 style={{ fontFamily: "var(--font-serif)", fontSize: 26, color: TEXT }}>Progress</h2>
+
+      {/* ACWR */}
+      {dashboard && (
+        <div style={{ ...card }}>
+          <div style={{ ...labelStyle, marginBottom: 12 }}>Acute : Chronic Workload Ratio</div>
+          <p style={{ fontFamily: "var(--font-serif)", fontSize: 52, color: acwrColor, letterSpacing: "-0.02em", lineHeight: 1 }}>
+            {dashboard.acwr?.toFixed(2) ?? "—"}
+          </p>
+          <p style={{ fontSize: 14, color: MUTED, marginTop: 12, lineHeight: 1.6 }}>
+            {dashboard.acwr === null
+              ? "Need 28 days of history to calculate. Using 10% weekly cap in the meantime."
+              : dashboard.acwr_status === "high"
+              ? "Above 1.5 — next week's load will be automatically capped."
+              : dashboard.acwr_status === "moderate"
+              ? "1.3–1.5 range. Elevated but manageable."
+              : "Below 1.3. Training load is well balanced."}
+          </p>
+        </div>
+      )}
+
+      {/* Mileage chart */}
+      {dashboard && (
+        <div style={card}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+            <span style={{ fontSize: 14, fontWeight: 500, color: TEXT }}>Weekly mileage</span>
+            <div style={{ display: "flex", gap: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 10, height: 10, borderRadius: 2, background: BORDER }} />
+                <span style={{ fontSize: 12, color: MUTED }}>Planned</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 10, height: 10, borderRadius: 2, background: TERRA_CLR }} />
+                <span style={{ fontSize: 12, color: MUTED }}>Actual</span>
+              </div>
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={dashboard.weekly_mileage} margin={{ top: 0, right: 0, bottom: 0, left: -24 }} barGap={3} barCategoryGap="30%">
+              <XAxis dataKey="week_start" tick={{ fontSize: 10, fill: MUTED }} tickLine={false} axisLine={false} tickFormatter={v => v.slice(5)} />
+              <YAxis tick={{ fontSize: 10, fill: MUTED }} tickLine={false} axisLine={false} />
+              <Tooltip
+                contentStyle={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 10, fontSize: 12, color: TEXT }}
+                labelStyle={{ color: MUTED }}
+                cursor={{ fill: "rgba(0,0,0,0.03)" }}
+              />
+              <Bar dataKey="planned_km" fill={BORDER} name="Planned" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="actual_km"  fill={TERRA_CLR} name="Actual"  radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+
+  // ── render ────────────────────────────────────────────────────────────────
+  return (
+    <>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: oklch(0.97 0.008 80); min-height: 100vh; }
+      `}</style>
+
+      <div style={{ display: "flex", minHeight: "100vh" }}>
+        <Sidebar nav={nav} setNav={setNav} syncing={syncing} onSync={syncStrava} />
+        <main style={{ flex: 1, padding: "56px 64px", overflowY: "auto" }}>
+          <div style={{ maxWidth: 860 }}>
+            {nav === "today"    && TodayView}
+            {nav === "plan"     && PlanView}
+            {nav === "journal"  && JournalView}
+            {nav === "progress" && ProgressView}
+          </div>
+        </main>
+      </div>
+
+      {/* Link modal */}
       {linkingActivity && (
-        <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 rounded-2xl w-full max-w-md p-6">
-            <h2 className="font-semibold text-white mb-1">Link to a session</h2>
-            <p className="text-xs text-gray-400 mb-4">
-              Activity: {linkingActivity.date} · {linkingActivity.distance_km} km
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
+          backdropFilter: "blur(4px)", display: "flex",
+          alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16,
+        }}>
+          <div style={{
+            background: "#fff", border: `1px solid ${BORDER}`,
+            borderRadius: 20, width: "100%", maxWidth: 380, padding: 24,
+          }}>
+            <h2 style={{ fontFamily: "var(--font-serif)", fontSize: 20, color: TEXT, marginBottom: 4 }}>
+              Match to a session
+            </h2>
+            <p style={{ fontSize: 13, color: MUTED, marginBottom: 20 }}>
+              {linkingActivity.date} · {linkingActivity.distance_km} km · {linkingActivity.source}
             </p>
-            <div className="space-y-2 max-h-72 overflow-y-auto">
-              {sessions
-                .filter(s => !s.linked_activity_id && s.type !== "rest")
-                .map(s => (
-                  <button
-                    key={s.id}
-                    onClick={() => linkActivity(s.id)}
-                    disabled={linking}
-                    className="w-full flex items-center justify-between bg-gray-800 hover:bg-gray-700 disabled:opacity-40 rounded-xl px-4 py-3 text-left transition-colors"
-                  >
-                    <div>
-                      <p className="text-sm font-medium capitalize">{s.type.replace("_", " ")}</p>
-                      <p className="text-xs text-gray-400">{s.date} · Wk {s.week}</p>
-                    </div>
-                    <p className="text-sm text-gray-300">{s.distance_km} km</p>
-                  </button>
-                ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 240, overflowY: "auto" }}>
+              {sessions.filter(s => !s.linked_activity_id && s.type !== "rest").map(s => (
+                <button
+                  key={s.id}
+                  onClick={() => linkActivity(s.id)}
+                  disabled={linking}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    background: "oklch(0.97 0.008 80)", border: `1px solid ${BORDER}`,
+                    borderRadius: 12, padding: "12px 16px", cursor: "pointer",
+                    opacity: linking ? 0.5 : 1, textAlign: "left",
+                  }}
+                >
+                  <div>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: TEXT, textTransform: "capitalize" }}>
+                      {TYPE_LABELS[s.type] ?? s.type}
+                    </span>
+                    <p style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>{s.date} · Wk {s.week}</p>
+                  </div>
+                  <p style={{ fontFamily: "var(--font-serif)", fontSize: 16, color: TEXT }}>{s.distance_km} km</p>
+                </button>
+              ))}
               {sessions.filter(s => !s.linked_activity_id && s.type !== "rest").length === 0 && (
-                <p className="text-sm text-gray-500 text-center py-4">No unlinked sessions.</p>
+                <p style={{ fontSize: 14, color: MUTED, textAlign: "center", padding: "24px 0" }}>No unlinked sessions.</p>
               )}
             </div>
             <button
               onClick={() => setLinkingActivity(null)}
-              className="w-full mt-4 py-2 rounded-xl border border-gray-700 text-gray-400 hover:text-gray-200 text-sm transition-colors"
-            >Cancel</button>
+              style={{
+                width: "100%", marginTop: 12, padding: "11px 0",
+                borderRadius: 12, border: `1px solid ${BORDER}`,
+                background: "oklch(0.97 0.008 80)", color: MUTED,
+                fontSize: 14, fontWeight: 500, cursor: "pointer",
+                fontFamily: "var(--font-sans)",
+              }}
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
-    </main>
+    </>
   );
 }
 
