@@ -180,3 +180,22 @@ def disconnect_strava(user_id: str, db: Session = Depends(get_db)):
     user.strava_connected = False
     db.commit()
     return {"status": "disconnected"}
+
+
+# ── User profile ─────────────────────────────────────────────────────────────
+
+users_router = APIRouter(prefix="/users", tags=["users"])
+
+@users_router.get("/{user_id}")
+def get_user(user_id: str, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+    full_name = user.name or ""
+    firstname = full_name.split()[0] if full_name else None
+    return {
+        "id": user.id,
+        "firstname": firstname,
+        "name": full_name,
+        "profile_pic_url": user.profile_pic_url,
+    }

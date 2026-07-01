@@ -16,6 +16,9 @@ function secondsFromTime(h: string, m: string, s: string) {
   return parseInt(h || "0") * 3600 + parseInt(m || "0") * 60 + parseInt(s || "0");
 }
 
+const inputCls = "w-full bg-[#111] border border-[#1f1f1f] rounded-xl px-4 py-3 text-white text-sm placeholder-[#333] focus:outline-none focus:border-[#333] transition-colors";
+const selectCls = "w-full bg-[#111] border border-[#1f1f1f] rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#333] transition-colors";
+
 function OnboardingPage() {
   const router = useRouter();
   const params = useSearchParams();
@@ -52,6 +55,12 @@ function OnboardingPage() {
     setLoading(true);
     setError("");
     try {
+      if (pendingPlanId) {
+        localStorage.setItem("plan_id", pendingPlanId);
+        localStorage.setItem("user_id", userId);
+        router.push(`/dashboard?plan_id=${pendingPlanId}&user_id=${userId}`);
+        return;
+      }
       const body = {
         user_id: userId,
         race_distance: form.race_distance,
@@ -67,13 +76,6 @@ function OnboardingPage() {
           recent_race_time_seconds: secondsFromTime(form.recent_race_h, form.recent_race_m, form.recent_race_s),
         }),
       };
-
-      if (pendingPlanId) {
-        localStorage.setItem("plan_id", pendingPlanId);
-        localStorage.setItem("user_id", userId);
-        router.push(`/dashboard?plan_id=${pendingPlanId}&user_id=${userId}`);
-        return;
-      }
       const result = await api.createPlan(body);
       if (result.warnings.length > 0) {
         setWarnings(result.warnings);
@@ -90,35 +92,50 @@ function OnboardingPage() {
     }
   };
 
+  const STEP_LABELS = ["Race goal", "Schedule", "Fitness"];
+
   return (
-    <main className="min-h-screen bg-gray-950 text-white">
-      <div className="max-w-lg mx-auto px-6 py-12">
-        <div className="mb-8">
-          <div className="flex gap-1 mb-6">
-            {[1, 2, 3].map(s => (
-              <div key={s} className={`h-1 flex-1 rounded-full ${s <= step ? "bg-orange-500" : "bg-gray-700"}`} />
+    <main className="min-h-screen bg-[#0a0a0a] text-white">
+      <div className="max-w-md mx-auto px-6 py-12">
+
+        {/* Header */}
+        <div className="mb-10">
+          <div className="flex items-center gap-2 mb-8">
+            {STEP_LABELS.map((label, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className={`flex items-center gap-1.5 ${i + 1 <= step ? "text-white" : "text-[#333]"}`}>
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-medium border ${
+                    i + 1 < step ? "bg-orange-500 border-orange-500 text-white"
+                    : i + 1 === step ? "border-orange-500 text-orange-400"
+                    : "border-[#222] text-[#333]"
+                  }`}>{i + 1}</div>
+                  <span className="text-xs">{label}</span>
+                </div>
+                {i < 2 && <div className={`w-6 h-px ${i + 1 < step ? "bg-orange-500/50" : "bg-[#1a1a1a]"}`} />}
+              </div>
             ))}
           </div>
-          <h1 className="text-2xl font-bold">
-            {step === 1 && "Your race goal"}
-            {step === 2 && "Your training schedule"}
-            {step === 3 && "Current fitness"}
+          <h1 className="text-xl font-semibold tracking-tight">
+            {step === 1 && "What are you training for?"}
+            {step === 2 && "When do you train?"}
+            {step === 3 && "What's your current fitness?"}
           </h1>
         </div>
 
+        {/* Step 1 */}
         {step === 1 && (
-          <div className="space-y-6">
+          <div className="space-y-5">
             <div>
-              <label className="block text-sm text-gray-400 mb-2">Race distance</label>
+              <label className="block text-xs text-[#555] mb-2 uppercase tracking-wider">Distance</label>
               <div className="grid grid-cols-2 gap-2">
                 {DISTANCES.map(d => (
                   <button
                     key={d.value}
                     onClick={() => setForm(f => ({ ...f, race_distance: d.value as any }))}
-                    className={`py-3 rounded-xl border font-medium transition-colors ${
+                    className={`py-3 rounded-xl border text-sm font-medium transition-colors ${
                       form.race_distance === d.value
-                        ? "border-orange-500 bg-orange-500/10 text-orange-400"
-                        : "border-gray-700 text-gray-300 hover:border-gray-500"
+                        ? "border-orange-500/50 bg-orange-500/10 text-orange-400"
+                        : "border-[#1f1f1f] text-[#666] hover:border-[#2a2a2a] hover:text-[#999]"
                     }`}
                   >
                     {d.label}
@@ -128,41 +145,40 @@ function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-2">Race date</label>
+              <label className="block text-xs text-[#555] mb-2 uppercase tracking-wider">Race date</label>
               <input
                 type="date"
                 value={form.race_date}
                 onChange={e => setForm(f => ({ ...f, race_date: e.target.value }))}
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500"
+                className={inputCls}
               />
             </div>
 
             <div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.has_target}
-                  onChange={e => setForm(f => ({ ...f, has_target: e.target.checked }))}
-                  className="rounded"
-                />
-                <span className="text-sm text-gray-300">I have a target finish time</span>
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                  form.has_target ? "bg-orange-500 border-orange-500" : "border-[#333] group-hover:border-[#444]"
+                }`}>
+                  {form.has_target && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                </div>
+                <input type="checkbox" checked={form.has_target} onChange={e => setForm(f => ({ ...f, has_target: e.target.checked }))} className="sr-only" />
+                <span className="text-sm text-[#666]">I have a target finish time</span>
               </label>
               {form.has_target && (
                 <div className="mt-3 flex gap-2">
                   {[
-                    { key: "target_h", placeholder: "H", max: 6 },
-                    { key: "target_m", placeholder: "MM", max: 59 },
-                    { key: "target_s", placeholder: "SS", max: 59 },
+                    { key: "target_h", placeholder: "H" },
+                    { key: "target_m", placeholder: "MM" },
+                    { key: "target_s", placeholder: "SS" },
                   ].map(f => (
                     <input
                       key={f.key}
                       type="number"
                       placeholder={f.placeholder}
                       min={0}
-                      max={f.max}
                       value={(form as any)[f.key]}
                       onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-                      className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white text-center focus:outline-none focus:border-orange-500"
+                      className="flex-1 bg-[#111] border border-[#1f1f1f] rounded-xl px-3 py-2.5 text-white text-sm text-center focus:outline-none focus:border-[#333] transition-colors"
                     />
                   ))}
                 </div>
@@ -171,27 +187,28 @@ function OnboardingPage() {
 
             <button
               onClick={() => setStep(2)}
-              disabled={!form.race_date || !form.race_distance}
-              className="w-full bg-orange-500 hover:bg-orange-400 disabled:opacity-40 text-white font-semibold py-3 rounded-xl transition-colors"
+              disabled={!form.race_date}
+              className="w-full bg-white hover:bg-gray-100 disabled:opacity-20 text-black font-medium py-3 rounded-xl transition-colors text-sm mt-2"
             >
-              Next
+              Continue
             </button>
           </div>
         )}
 
+        {/* Step 2 */}
         {step === 2 && (
-          <div className="space-y-6">
+          <div className="space-y-5">
             <div>
-              <label className="block text-sm text-gray-400 mb-2">Training days</label>
-              <div className="flex gap-2 flex-wrap">
+              <label className="block text-xs text-[#555] mb-2 uppercase tracking-wider">Training days</label>
+              <div className="flex gap-1.5 flex-wrap">
                 {DAYS.map(d => (
                   <button
                     key={d}
                     onClick={() => toggleDay(d)}
-                    className={`px-3 py-2 rounded-lg text-sm capitalize font-medium transition-colors ${
+                    className={`px-3 py-2 rounded-lg text-xs capitalize font-medium transition-colors ${
                       form.training_days.includes(d)
                         ? "bg-orange-500 text-white"
-                        : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                        : "bg-[#111] border border-[#1f1f1f] text-[#555] hover:text-[#888]"
                     }`}
                   >
                     {d.slice(0, 3)}
@@ -201,11 +218,11 @@ function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-2">Long run day</label>
+              <label className="block text-xs text-[#555] mb-2 uppercase tracking-wider">Long run day</label>
               <select
                 value={form.long_run_day}
                 onChange={e => setForm(f => ({ ...f, long_run_day: e.target.value }))}
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500"
+                className={selectCls}
               >
                 {form.training_days.map(d => (
                   <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>
@@ -214,49 +231,50 @@ function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-2">Current weekly mileage (km)</label>
+              <label className="block text-xs text-[#555] mb-2 uppercase tracking-wider">Weekly mileage (km)</label>
               <input
                 type="number"
                 min={0}
-                placeholder="e.g. 40"
+                placeholder="40"
                 value={form.current_weekly_mileage}
                 onChange={e => setForm(f => ({ ...f, current_weekly_mileage: e.target.value }))}
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500"
+                className={inputCls}
               />
             </div>
 
-            <div className="flex gap-3">
-              <button onClick={() => setStep(1)} className="flex-1 border border-gray-700 text-gray-300 py-3 rounded-xl hover:border-gray-500 transition-colors">Back</button>
+            <div className="flex gap-2 mt-2">
+              <button onClick={() => setStep(1)} className="flex-1 border border-[#1f1f1f] text-[#555] py-3 rounded-xl hover:border-[#2a2a2a] hover:text-[#888] transition-colors text-sm">Back</button>
               <button
                 onClick={() => setStep(3)}
                 disabled={form.training_days.length === 0 || !form.current_weekly_mileage}
-                className="flex-1 bg-orange-500 hover:bg-orange-400 disabled:opacity-40 text-white font-semibold py-3 rounded-xl transition-colors"
+                className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-20 text-black font-medium py-3 rounded-xl transition-colors text-sm"
               >
-                Next
+                Continue
               </button>
             </div>
           </div>
         )}
 
+        {/* Step 3 */}
         {step === 3 && (
-          <div className="space-y-6">
-            <p className="text-gray-400 text-sm">
-              Enter a recent race time so we can calculate your VDOT fitness score. If you don't have one, your Strava history will be used.
+          <div className="space-y-5">
+            <p className="text-sm text-[#555] leading-relaxed">
+              Enter a recent race to calculate your VDOT score. Skip if you don't have one — Strava history will be used.
             </p>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-2">Recent race distance (km)</label>
+              <label className="block text-xs text-[#555] mb-2 uppercase tracking-wider">Recent race distance (km)</label>
               <input
                 type="number"
-                placeholder="e.g. 10"
+                placeholder="10"
                 value={form.recent_race_distance_km}
                 onChange={e => setForm(f => ({ ...f, recent_race_distance_km: e.target.value }))}
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500"
+                className={inputCls}
               />
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-2">Finish time (H : MM : SS)</label>
+              <label className="block text-xs text-[#555] mb-2 uppercase tracking-wider">Finish time</label>
               <div className="flex gap-2">
                 {[
                   { key: "recent_race_h", placeholder: "H" },
@@ -269,30 +287,29 @@ function OnboardingPage() {
                     placeholder={f.placeholder}
                     value={(form as any)[f.key]}
                     onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white text-center focus:outline-none focus:border-orange-500"
+                    className="flex-1 bg-[#111] border border-[#1f1f1f] rounded-xl px-3 py-2.5 text-white text-sm text-center focus:outline-none focus:border-[#333] transition-colors"
                   />
                 ))}
               </div>
             </div>
 
             {warnings.length > 0 && (
-              <div className="bg-yellow-900/30 border border-yellow-700 rounded-xl p-4 space-y-1">
-                <p className="text-yellow-400 font-medium text-sm">Heads up</p>
-                {warnings.map((w, i) => <p key={i} className="text-yellow-300 text-sm">{w}</p>)}
-                <p className="text-yellow-300 text-sm mt-2">You can still proceed — these are soft warnings.</p>
+              <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4 space-y-1">
+                <p className="text-yellow-400 font-medium text-xs uppercase tracking-wider mb-2">Heads up</p>
+                {warnings.map((w, i) => <p key={i} className="text-[#999] text-sm">{w}</p>)}
               </div>
             )}
 
             {error && <p className="text-red-400 text-sm">{error}</p>}
 
-            <div className="flex gap-3">
-              <button onClick={() => setStep(2)} className="flex-1 border border-gray-700 text-gray-300 py-3 rounded-xl hover:border-gray-500 transition-colors">Back</button>
+            <div className="flex gap-2 mt-2">
+              <button onClick={() => setStep(2)} className="flex-1 border border-[#1f1f1f] text-[#555] py-3 rounded-xl hover:border-[#2a2a2a] hover:text-[#888] transition-colors text-sm">Back</button>
               <button
                 onClick={handleSubmit}
                 disabled={loading}
-                className="flex-1 bg-orange-500 hover:bg-orange-400 disabled:opacity-40 text-white font-semibold py-3 rounded-xl transition-colors"
+                className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-20 text-black font-medium py-3 rounded-xl transition-colors text-sm"
               >
-                {loading ? "Building plan..." : warnings.length > 0 ? "Proceed anyway" : "Build my plan"}
+                {loading ? "Building..." : warnings.length > 0 ? "Proceed anyway" : "Build my plan"}
               </button>
             </div>
           </div>

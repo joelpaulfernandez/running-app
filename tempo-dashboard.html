@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tempo</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: oklch(0.97 0.008 80);
+    --card: #ffffff;
+    --border: oklch(0.9 0.012 80);
+    --text: oklch(0.28 0.02 60);
+    --muted: oklch(0.5 0.02 60);
+    --accent: oklch(0.65 0.13 40);
+    --accent-tint: oklch(0.96 0.018 40);
+  }
+
+  body {
+    background: oklch(0.88 0.015 60);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    color: var(--text);
+    padding: 32px;
+  }
+
+  /* macOS window */
+  .window {
+    width: 1240px;
+    max-width: 100%;
+    background: var(--bg);
+    border-radius: 16px;
+    box-shadow: 0 32px 80px oklch(0.3 0.02 60 / 0.22), 0 2px 8px oklch(0.3 0.02 60 / 0.08);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .titlebar {
+    height: 44px;
+    background: oklch(0.945 0.01 80);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .traffic-lights {
+    position: absolute;
+    left: 16px;
+    display: flex;
+    gap: 8px;
+  }
+
+  .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+  .dot-red    { background: #ff5f57; }
+  .dot-yellow { background: #febc2e; }
+  .dot-green  { background: #28c840; }
+
+  .titlebar-name {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: 14px;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+
+  /* Body layout */
+  .body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 236px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    padding: 32px 24px;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+  }
+
+  .wordmark {
+    font-family: 'Instrument Serif', serif;
+    font-size: 26px;
+    color: var(--text);
+    letter-spacing: -0.01em;
+    margin-bottom: 40px;
+  }
+
+  nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  nav a {
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--muted);
+    padding: 9px 12px;
+    border-radius: 8px;
+    transition: color 0.15s;
+  }
+
+  nav a:hover { color: var(--text); }
+
+  nav a.active {
+    color: var(--accent);
+    background: var(--accent-tint);
+  }
+
+  .sidebar-quote {
+    margin-top: auto;
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.55;
+  }
+
+  /* Main */
+  main {
+    flex: 1;
+    padding: 44px 52px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  /* Header */
+  .header { display: flex; flex-direction: column; gap: 6px; }
+
+  .date-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .greeting {
+    font-family: 'Instrument Serif', serif;
+    font-size: 38px;
+    line-height: 1.1;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+
+  .subgreeting {
+    font-size: 14px;
+    color: var(--muted);
+    margin-top: 2px;
+    line-height: 1.5;
+  }
+
+  /* Today card */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px 32px;
+  }
+
+  .card-label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  .run-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+
+  .run-info { display: flex; flex-direction: column; gap: 4px; }
+
+  .run-title {
+    font-family: 'Instrument Serif', serif;
+    font-size: 24px;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+
+  .run-sub {
+    font-size: 14px;
+    color: var(--muted);
+  }
+
+  .btn-begin {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 12px 28px;
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: opacity 0.15s;
+  }
+  .btn-begin:hover { opacity: 0.88; }
+
+  /* Stat strip */
+  .stat-strip {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  .stat-cell {
+    padding: 24px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .stat-cell + .stat-cell {
+    border-left: 1px solid var(--border);
+  }
+
+  .stat-label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .stat-value {
+    font-family: 'Instrument Serif', serif;
+    font-size: 32px;
+    color: var(--text);
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  /* Week ahead */
+  .week-section { display: flex; flex-direction: column; gap: 0; }
+
+  .section-title {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  .week-list {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  .week-row {
+    display: flex;
+    align-items: center;
+    padding: 16px 28px;
+    border-bottom: 1px solid var(--border);
+    gap: 24px;
+  }
+
+  .week-row:last-child { border-bottom: none; }
+
+  .week-row.today {
+    background: var(--accent-tint);
+  }
+
+  .week-row.today .day-label,
+  .week-row.today .run-name {
+    color: var(--accent);
+  }
+
+  .day-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    width: 80px;
+    flex-shrink: 0;
+    letter-spacing: 0.03em;
+  }
+
+  .run-name {
+    font-size: 14px;
+    color: var(--text);
+    font-weight: 400;
+    flex: 1;
+  }
+
+  .run-detail {
+    font-size: 13px;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+
+<div class="window">
+
+  <!-- Title bar -->
+  <div class="titlebar">
+    <div class="traffic-lights">
+      <div class="dot dot-red"></div>
+      <div class="dot dot-yellow"></div>
+      <div class="dot dot-green"></div>
+    </div>
+    <span class="titlebar-name">tempo</span>
+  </div>
+
+  <div class="body">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="wordmark">Tempo</div>
+      <nav>
+        <a href="#" class="active">Today</a>
+        <a href="#">Training plan</a>
+        <a href="#">Journal</a>
+        <a href="#">Progress</a>
+      </nav>
+      <p class="sidebar-quote">"Slow is smooth,<br>smooth is fast."</p>
+    </aside>
+
+    <!-- Main content -->
+    <main>
+
+      <!-- Header -->
+      <header class="header">
+        <span class="date-label">Tuesday, July 1</span>
+        <h1 class="greeting">Good morning, Maya.</h1>
+        <p class="subgreeting">Take it easy today — you want fresh legs before Sunday's long run.</p>
+      </header>
+
+      <!-- Today's run card -->
+      <section class="card">
+        <div class="card-label">Today's run</div>
+        <div class="run-row">
+          <div class="run-info">
+            <h2 class="run-title">Tempo &middot; 8 km</h2>
+            <p class="run-sub">Hold 5:10 /km through the middle 4 km</p>
+          </div>
+          <button class="btn-begin">Begin</button>
+        </div>
+      </section>
+
+      <!-- Stat strip -->
+      <div class="stat-strip">
+        <div class="stat-cell">
+          <span class="stat-label">This week</span>
+          <span class="stat-value">32.4 km</span>
+        </div>
+        <div class="stat-cell">
+          <span class="stat-label">Avg pace</span>
+          <span class="stat-value">5:24</span>
+        </div>
+        <div class="stat-cell">
+          <span class="stat-label">Weekly goal</span>
+          <span class="stat-value">71%</span>
+        </div>
+      </div>
+
+      <!-- Week ahead -->
+      <section class="week-section">
+        <h3 class="section-title">The week ahead</h3>
+        <div class="week-list">
+          <div class="week-row">
+            <span class="day-label">Mon</span>
+            <span class="run-name">Rest</span>
+            <span class="run-detail">&mdash;</span>
+          </div>
+          <div class="week-row">
+            <span class="day-label">Tue</span>
+            <span class="run-name">Easy run</span>
+            <span class="run-detail">6 km</span>
+          </div>
+          <div class="week-row">
+            <span class="day-label">Wed</span>
+            <span class="run-name">Intervals</span>
+            <span class="run-detail">6&times;800 m</span>
+          </div>
+          <div class="week-row today">
+            <span class="day-label">Fri &middot; Today</span>
+            <span class="run-name">Tempo run</span>
+            <span class="run-detail">8 km</span>
+          </div>
+          <div class="week-row">
+            <span class="day-label">Sun</span>
+            <span class="run-name">Long run</span>
+            <span class="run-detail">18 km</span>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+</body>
+</html>

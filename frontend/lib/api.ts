@@ -45,6 +45,9 @@ export const api = {
 
   syncStrava: (userId: string) =>
     req(`/strava/sync/${userId}`, { method: "POST" }),
+
+  getUser: (userId: string) =>
+    req<UserProfile>(`/users/${userId}`),
 };
 
 // Types
@@ -95,6 +98,13 @@ export interface ManualActivityBody {
   activity_date: string;
   distance_km: number;
   duration_seconds: number;
+}
+
+export interface UserProfile {
+  id: string;
+  firstname: string | null;
+  name: string;
+  profile_pic_url: string | null;
 }
 
 export interface UnlinkedActivity {

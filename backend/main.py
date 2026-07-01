@@ -7,6 +7,7 @@ load_dotenv()
 
 from database import init_db
 from routers import plans, activities, strava, dev
+from routers.strava import users_router
 
 app = FastAPI(title="Running Coach API", version="1.0.0")
 
@@ -21,6 +22,7 @@ app.add_middleware(
 app.include_router(plans.router)
 app.include_router(activities.router)
 app.include_router(strava.router)
+app.include_router(users_router)
 app.include_router(dev.router)
 
 

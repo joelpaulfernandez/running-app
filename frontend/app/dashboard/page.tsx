@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { api, DashboardData, PlannedSession, UnlinkedActivity } from "@/lib/api";
+import { api, DashboardData, PlannedSession, UnlinkedActivity, UserProfile } from "@/lib/api";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -139,6 +139,7 @@ function DashboardPage() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [sessions, setSessions]   = useState<PlannedSession[]>([]);
   const [unlinked, setUnlinked]   = useState<UnlinkedActivity[]>([]);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [syncing, setSyncing]     = useState(false);
   const [nav, setNav]             = useState<NavKey>("today");
   const [linkingActivity, setLinkingActivity] = useState<UnlinkedActivity | null>(null);
@@ -148,7 +149,10 @@ function DashboardPage() {
     if (!planId) return;
     api.getDashboard(planId).then(setDashboard);
     api.getPlanSessions(planId).then(setSessions);
-    if (userId) api.getUnlinkedActivities(userId).then(setUnlinked);
+    if (userId) {
+      api.getUnlinkedActivities(userId).then(setUnlinked);
+      api.getUser(userId).then(setUserProfile).catch(() => {});
+    }
   }, [planId, userId]);
 
   const refresh = async () => {
@@ -233,7 +237,7 @@ function DashboardPage() {
           fontFamily: "var(--font-serif)", fontSize: 46,
           color: TEXT, letterSpacing: "-0.02em", lineHeight: 1.05,
         }}>
-          {greetingTime()}.
+          {greetingTime()}{userProfile?.firstname ? `, ${userProfile.firstname}` : ""}.
         </h1>
         <p style={{ fontSize: 15, color: MUTED, marginTop: 4, lineHeight: 1.5 }}>
           {dashboard ? calmNote : "Loading your plan…"}
