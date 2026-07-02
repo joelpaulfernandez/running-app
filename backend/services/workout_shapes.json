@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "shapes": {
+    "tempo_cruise": {
+      "zone": "T",
+      "warmup_cooldown_km": 2.0,
+      "quality_pct_of_week": 0.09,
+      "quality_max_km": 10.0,
+      "reps_min": 2,
+      "reps_max": 5,
+      "rep_duration_min_base": 8,
+      "rep_duration_min_max": 12,
+      "recovery_min": 2
+    },
+    "interval_800": {
+      "zone": "I",
+      "warmup_cooldown_km": 3.0,
+      "quality_pct_of_week": 0.07,
+      "quality_max_km": 8.0,
+      "rep_dist_m": 800,
+      "reps_min": 4,
+      "reps_max": 10,
+      "recovery_type": "equal_time"
+    },
+    "interval_1000": {
+      "zone": "I",
+      "warmup_cooldown_km": 3.0,
+      "quality_pct_of_week": 0.07,
+      "quality_max_km": 8.0,
+      "rep_dist_m": 1000,
+      "reps_min": 4,
+      "reps_max": 8,
+      "recovery_sec": 90
+    },
+    "rep_200": {
+      "zone": "R",
+      "warmup_cooldown_km": 2.0,
+      "quality_pct_of_week": 0.05,
+      "quality_max_km": 4.0,
+      "rep_dist_m": 200,
+      "reps_min": 8,
+      "reps_max": 16,
+      "recovery_dist_m": 200
+    },
+    "rep_400": {
+      "zone": "R",
+      "warmup_cooldown_km": 2.0,
+      "quality_pct_of_week": 0.05,
+      "quality_max_km": 4.0,
+      "rep_dist_m": 400,
+      "reps_min": 4,
+      "reps_max": 12,
+      "recovery_dist_m": 400
+    },
+    "strides": {
+      "zone": "R",
+      "rep_dist_m": 100,
+      "reps_min": 4,
+      "reps_max": 8
+    },
+    "time_trial": {
+      "zone": "race"
+    }
+  }
+}

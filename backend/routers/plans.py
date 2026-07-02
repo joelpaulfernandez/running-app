@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -13,10 +13,62 @@ from services.vdot import (
 from services.adaptation_engine import (
     compute_acwr, apply_acwr_cap, reschedule_missed_session,
     maybe_recalc_vdot, is_session_missed, flat_10pct_mileage_cap,
+    compute_volume_adherence,
 )
 from database import get_db
 
 router = APIRouter(prefix="/plans", tags=["plans"])
+
+
+def _regenerate_future_sessions(
+    plan: Plan,
+    new_vdot: float,
+    new_version: PlanVersion,
+    db: Session,
+) -> None:
+    """
+    Delete all future unscheduled sessions and regenerate them with the new VDOT.
+    Past sessions (with linked activities) are preserved as historical record.
+    """
+    today = date.today()
+
+    future_unlinked = (
+        db.query(PlannedSession)
+        .filter(
+            PlannedSession.plan_id == plan.id,
+            PlannedSession.scheduled_date >= today,
+            PlannedSession.linked_activity_id == None,
+        )
+        .all()
+    )
+    if not future_unlinked:
+        return
+
+    for s in future_unlinked:
+        db.delete(s)
+
+    # Compute week offset so week numbers stay continuous from plan start
+    plan_origin = plan.created_at.date()
+    while plan_origin.weekday() != 0:  # advance to Monday
+        plan_origin += timedelta(days=1)
+    week_number_offset = (today - plan_origin).days // 7
+
+    new_sessions = generate_plan(
+        race_distance=plan.race_distance,
+        race_date=plan.race_date,
+        vdot=new_vdot,
+        current_weekly_mileage=plan.initial_weekly_mileage,
+        training_days=plan.training_days,
+        long_run_day=plan.long_run_day,
+        start_date=today,
+        week_number_offset=week_number_offset,
+    )
+    for s in new_sessions:
+        db.add(PlannedSession(
+            plan_id=plan.id,
+            plan_version_id=new_version.id,
+            **s,
+        ))
 
 
 class CreatePlanRequest(BaseModel):
@@ -58,6 +110,12 @@ def create_plan(req: CreatePlanRequest, db: Session = Depends(get_db)):
         target_seconds=req.target_finish_time_seconds,
         weeks_available=weeks_available,
     )
+
+    if req.race_distance == "marathon" and len(req.training_days) < 4:
+        warnings.append(
+            "Marathon training on 3 days/week is thin — long runs climb to 30+ km while easy volume is limited. "
+            "Consider adding a 4th training day."
+        )
 
     peak_km = peak_mileage_for_vdot(vdot, req.race_distance)
 
@@ -215,6 +273,7 @@ def link_activity(plan_id: str, req: LinkActivityRequest, db: Session = Depends(
 
     coach_note = None
     if explanation:
+        old_vdot = user.vdot
         user.vdot = new_vdot
         # Create new plan version
         latest_version = max(plan.versions, key=lambda v: v.version_number)
@@ -222,13 +281,128 @@ def link_activity(plan_id: str, req: LinkActivityRequest, db: Session = Depends(
             plan_id=plan_id,
             version_number=latest_version.version_number + 1,
             trigger="vdot_recalc",
-            trigger_detail={"old_vdot": user.vdot, "new_vdot": new_vdot, "explanation": explanation},
+            trigger_detail={"old_vdot": old_vdot, "new_vdot": new_vdot, "explanation": explanation},
         )
         db.add(new_version)
-        coach_note = explanation  # In prod: call coach_agent.get_coach_note()
+        db.flush()
+
+        # Propagate new VDOT into all future unscheduled sessions
+        _regenerate_future_sessions(plan, new_vdot, new_version, db)
+        coach_note = explanation
+
+    # Volume adherence check — scale future sessions if consistently over/under
+    linked_sessions = [
+        s for s in plan.sessions
+        if s.linked_activity_id and s.session_type != "rest" and s.distance_km
+    ]
+    completed = []
+    for ls in linked_sessions:
+        act = db.query(Activity).filter(Activity.id == ls.linked_activity_id).first()
+        if act:
+            completed.append({"planned_km": ls.distance_km, "actual_km": act.distance_km})
+
+    volume_scale, volume_note = compute_volume_adherence(completed)
+    if volume_scale is not None:
+        today = date.today()
+        future_unlinked = (
+            db.query(PlannedSession)
+            .filter(
+                PlannedSession.plan_id == plan_id,
+                PlannedSession.scheduled_date >= today,
+                PlannedSession.linked_activity_id == None,
+                PlannedSession.session_type != "rest",
+            )
+            .all()
+        )
+        if future_unlinked:
+            # Only create a new version if VDOT didn't already create one this request
+            if not explanation:
+                latest_version = max(plan.versions, key=lambda v: v.version_number)
+                new_version = PlanVersion(
+                    plan_id=plan_id,
+                    version_number=latest_version.version_number + 1,
+                    trigger="volume_adjustment",
+                    trigger_detail={"scale": volume_scale, "reason": volume_note},
+                )
+                db.add(new_version)
+                db.flush()
+            for s in future_unlinked:
+                s.distance_km = round(s.distance_km * volume_scale, 1)
+            if coach_note:
+                coach_note = coach_note + " " + volume_note
+            else:
+                coach_note = volume_note
 
     db.commit()
     return {"linked": True, "vdot_updated": explanation is not None, "coach_note": coach_note}
+
+
+class UpdateTrainingDaysRequest(BaseModel):
+    training_days: list[str]
+    long_run_day: str
+
+
+@router.patch("/{plan_id}/training-days")
+def update_training_days(plan_id: str, req: UpdateTrainingDaysRequest, db: Session = Depends(get_db)):
+    plan = db.query(Plan).filter(Plan.id == plan_id).first()
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    if req.long_run_day not in req.training_days:
+        raise HTTPException(400, "long_run_day must be one of training_days")
+    if len(req.training_days) < 2:
+        raise HTTPException(400, "Need at least 2 training days")
+
+    plan.training_days = req.training_days
+    plan.long_run_day = req.long_run_day
+
+    today = date.today()
+    future_unlinked = (
+        db.query(PlannedSession)
+        .filter(
+            PlannedSession.plan_id == plan.id,
+            PlannedSession.scheduled_date >= today,
+            PlannedSession.linked_activity_id == None,
+        )
+        .all()
+    )
+    for s in future_unlinked:
+        db.delete(s)
+    db.flush()
+
+    plan_origin = plan.created_at.date()
+    while plan_origin.weekday() != 0:
+        plan_origin += timedelta(days=1)
+    week_number_offset = (today - plan_origin).days // 7
+
+    latest_version = max(plan.versions, key=lambda v: v.version_number)
+    new_version = PlanVersion(
+        plan_id=plan.id,
+        version_number=latest_version.version_number + 1,
+        trigger="training_days_change",
+        trigger_detail={"training_days": req.training_days, "long_run_day": req.long_run_day},
+    )
+    db.add(new_version)
+    db.flush()
+
+    new_sessions = generate_plan(
+        race_distance=plan.race_distance,
+        race_date=plan.race_date,
+        vdot=plan.user.vdot,
+        current_weekly_mileage=plan.initial_weekly_mileage,
+        training_days=req.training_days,
+        long_run_day=req.long_run_day,
+        start_date=today,
+        week_number_offset=week_number_offset,
+    )
+    for s in new_sessions:
+        db.add(PlannedSession(
+            plan_id=plan.id,
+            plan_version_id=new_version.id,
+            **s,
+        ))
+
+    db.commit()
+    return {"updated": True, "sessions_regenerated": len(new_sessions)}
 
 
 @router.post("/{plan_id}/pause")

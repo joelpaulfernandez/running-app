@@ -23,10 +23,10 @@ export const api = {
     req<DashboardData>(`/plans/${planId}/dashboard`),
 
   linkActivity: (planId: string, sessionId: string, activityId: string) =>
-    req(`/plans/${planId}/link-activity`, {
-      method: "POST",
-      body: JSON.stringify({ session_id: sessionId, activity_id: activityId }),
-    }),
+    req<{ linked: boolean; vdot_updated: boolean; coach_note: string | null }>(
+      `/plans/${planId}/link-activity`,
+      { method: "POST", body: JSON.stringify({ session_id: sessionId, activity_id: activityId }) },
+    ),
 
   pausePlan: (planId: string) =>
     req(`/plans/${planId}/pause`, { method: "POST" }),
@@ -48,6 +48,12 @@ export const api = {
 
   getUser: (userId: string) =>
     req<UserProfile>(`/users/${userId}`),
+
+  updateTrainingDays: (planId: string, trainingDays: string[], longRunDay: string) =>
+    req<{ updated: boolean; sessions_regenerated: number }>(
+      `/plans/${planId}/training-days`,
+      { method: "PATCH", body: JSON.stringify({ training_days: trainingDays, long_run_day: longRunDay }) },
+    ),
 };
 
 // Types

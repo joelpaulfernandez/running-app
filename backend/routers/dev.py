@@ -2,7 +2,7 @@
 import os
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from models.db import User
+from models.db import User, Plan
 from database import get_db
 
 router = APIRouter(prefix="/dev", tags=["dev"])
@@ -27,3 +27,15 @@ def create_mock_user(db: Session = Depends(get_db)):
         db.commit()
         db.refresh(user)
     return {"user_id": user.id}
+
+
+@router.post("/deactivate-plan/{plan_id}")
+def deactivate_plan(plan_id: str, db: Session = Depends(get_db)):
+    if os.environ.get("ENVIRONMENT") != "development":
+        raise HTTPException(404, "Not found")
+    plan = db.query(Plan).filter(Plan.id == plan_id).first()
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    plan.is_active = False
+    db.commit()
+    return {"deactivated": plan_id}

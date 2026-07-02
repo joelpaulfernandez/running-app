@@ -140,6 +140,46 @@ def maybe_recalc_vdot(
     )
 
 
+def compute_volume_adherence(
+    completed_sessions: list[dict],
+    min_sessions: int = 3,
+) -> tuple[Optional[float], Optional[str]]:
+    """
+    Check if actual run distances are consistently deviating from planned.
+    completed_sessions: list of {planned_km, actual_km} for recently linked sessions.
+    Returns (scale_factor, explanation) or (None, None) if no adjustment needed.
+    Scale factor: 0.9 = reduce 10%, 1.1 = increase 10%.
+    Only triggers if last min_sessions all deviate >15% in the same direction.
+    """
+    if len(completed_sessions) < min_sessions:
+        return None, None
+
+    recent = completed_sessions[-min_sessions:]
+    ratios = []
+    for s in recent:
+        planned = s.get("planned_km", 0)
+        actual = s.get("actual_km", 0)
+        if planned and planned > 0:
+            ratios.append(actual / planned)
+
+    if len(ratios) < min_sessions:
+        return None, None
+
+    avg_ratio = sum(ratios) / len(ratios)
+
+    if all(r < 0.85 for r in ratios):
+        return 0.90, (
+            f"You've been running ~{avg_ratio*100:.0f}% of planned volume for the last {min_sessions} sessions. "
+            f"Scaling future sessions down 10% to match your actual capacity."
+        )
+    if all(r > 1.15 for r in ratios):
+        return 1.10, (
+            f"You've been running ~{avg_ratio*100:.0f}% of planned volume for the last {min_sessions} sessions. "
+            f"Nudging future sessions up 10% to reflect your current fitness."
+        )
+    return None, None
+
+
 def is_session_missed(session: dict, user_timezone: str = "UTC") -> bool:
     """
     Session is missed at end-of-day the day AFTER it was scheduled (user's local tz).

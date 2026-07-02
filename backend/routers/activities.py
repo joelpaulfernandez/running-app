@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -36,16 +36,30 @@ def log_manual_activity(req: ManualActivityRequest, db: Session = Depends(get_db
 @router.get("/unlinked/{user_id}")
 def get_unlinked_activities(user_id: str, db: Session = Depends(get_db)):
     """Activities not yet linked to a planned session — shown in the match UI."""
-    from models.db import PlannedSession
+    from models.db import PlannedSession, Plan
+
     linked_ids = {
         s.linked_activity_id
         for s in db.query(PlannedSession).filter(PlannedSession.linked_activity_id != None).all()
     }
+
+    # Only surface runs from after the user's active plan was created
+    active_plan = (
+        db.query(Plan)
+        .filter(Plan.user_id == user_id, Plan.is_active == True)
+        .order_by(Plan.created_at.desc())
+        .first()
+    )
+    cutoff = (active_plan.created_at.date() - timedelta(days=7)) if active_plan else date.today() - timedelta(days=28)
+
     activities = (
         db.query(Activity)
-        .filter(Activity.user_id == user_id, ~Activity.id.in_(linked_ids))
+        .filter(
+            Activity.user_id == user_id,
+            ~Activity.id.in_(linked_ids),
+            Activity.activity_date >= cutoff,
+        )
         .order_by(Activity.activity_date.desc())
-        .limit(30)
         .all()
     )
     return [

@@ -144,6 +144,12 @@ function DashboardPage() {
   const [nav, setNav]             = useState<NavKey>("today");
   const [linkingActivity, setLinkingActivity] = useState<UnlinkedActivity | null>(null);
   const [linking, setLinking]     = useState(false);
+  const [coachNote, setCoachNote] = useState<string | null>(null);
+  const [dismissedUnlinked, setDismissedUnlinked] = useState(false);
+  const [editingDays, setEditingDays] = useState(false);
+  const [draftDays, setDraftDays] = useState<string[]>([]);
+  const [draftLongRun, setDraftLongRun] = useState<string>("");
+  const [savingDays, setSavingDays] = useState(false);
 
   useEffect(() => {
     if (!planId) return;
@@ -167,10 +173,11 @@ function DashboardPage() {
   const linkActivity = async (sessionId: string) => {
     if (!linkingActivity) return;
     setLinking(true);
-    await api.linkActivity(planId, sessionId, linkingActivity.id);
+    const result = await api.linkActivity(planId, sessionId, linkingActivity.id);
     await refresh();
     setLinkingActivity(null);
     setLinking(false);
+    if (result.coach_note) setCoachNote(result.coach_note);
   };
 
   const syncStrava = async () => {
@@ -179,6 +186,32 @@ function DashboardPage() {
     await api.syncStrava(userId);
     await refresh();
     setSyncing(false);
+  };
+
+  const openEditDays = () => {
+    // Infer current days from sessions
+    const dayNames = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+    const usedDays = new Set(sessions.map(s => dayNames[new Date(s.date + "T00:00:00").getDay()]));
+    const longRunSession = sessions.find(s => s.type === "long");
+    const inferredLongRun = longRunSession
+      ? dayNames[new Date(longRunSession.date + "T00:00:00").getDay()]
+      : "sunday";
+    setDraftDays(Array.from(usedDays).filter(d => d !== undefined));
+    setDraftLongRun(inferredLongRun);
+    setEditingDays(true);
+  };
+
+  const saveTrainingDays = async () => {
+    if (draftDays.length < 2) return;
+    if (!draftDays.includes(draftLongRun)) return;
+    setSavingDays(true);
+    try {
+      await api.updateTrainingDays(planId, draftDays, draftLongRun);
+      await refresh();
+      setEditingDays(false);
+    } finally {
+      setSavingDays(false);
+    }
   };
 
   // ── derived data ─────────────────────────────────────────────────────────
@@ -245,7 +278,7 @@ function DashboardPage() {
       </header>
 
       {/* Unlinked banner */}
-      {unlinked.length > 0 && (
+      {unlinked.length > 0 && !dismissedUnlinked && (
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
           background: "rgba(180, 95, 55, 0.05)", border: `1px solid rgba(180, 95, 55, 0.2)`,
@@ -256,14 +289,45 @@ function DashboardPage() {
               {unlinked.length} unmatched {unlinked.length === 1 ? "run" : "runs"}
             </span>{" "}from Strava
           </p>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <button
+              onClick={() => setDismissedUnlinked(true)}
+              style={{
+                background: "none", border: "none", cursor: "pointer",
+                fontSize: 12, fontWeight: 500, color: MUTED,
+              }}
+            >
+              Skip
+            </button>
+            <button
+              onClick={() => setLinkingActivity(unlinked[0])}
+              style={{
+                background: "none", border: "none", cursor: "pointer",
+                fontSize: 12, fontWeight: 500, color: TERRA_CLR,
+              }}
+            >
+              Match →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Coach note banner */}
+      {coachNote && (
+        <div style={{
+          display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12,
+          background: "rgba(34, 197, 94, 0.05)", border: "1px solid rgba(34, 197, 94, 0.2)",
+          borderRadius: 12, padding: "14px 16px",
+        }}>
+          <div style={{ display: "flex", gap: 10, flex: 1 }}>
+            <span style={{ fontSize: 16, lineHeight: 1 }}>🤖</span>
+            <p style={{ fontSize: 13, color: TEXT, lineHeight: 1.6 }}>{coachNote}</p>
+          </div>
           <button
-            onClick={() => setLinkingActivity(unlinked[0])}
-            style={{
-              background: "none", border: "none", cursor: "pointer",
-              fontSize: 12, fontWeight: 500, color: TERRA_CLR,
-            }}
+            onClick={() => setCoachNote(null)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: MUTED, fontSize: 16, padding: 0, flexShrink: 0 }}
           >
-            Match →
+            ×
           </button>
         </div>
       )}
@@ -376,9 +440,23 @@ function DashboardPage() {
     </div>
   );
 
+  const ALL_DAYS = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
+
   const PlanView = (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <h2 style={{ fontFamily: "var(--font-serif)", fontSize: 26, color: TEXT }}>Training plan</h2>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <h2 style={{ fontFamily: "var(--font-serif)", fontSize: 26, color: TEXT }}>Training plan</h2>
+        <button
+          onClick={openEditDays}
+          style={{
+            background: "none", border: `1px solid ${BORDER}`, borderRadius: 8,
+            padding: "7px 14px", cursor: "pointer", fontSize: 12, fontWeight: 500,
+            color: MUTED, fontFamily: "var(--font-sans)",
+          }}
+        >
+          Change training days
+        </button>
+      </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {sessions.map(s => (
           <div
@@ -517,6 +595,118 @@ function DashboardPage() {
           </div>
         </main>
       </div>
+
+      {/* Training days modal */}
+      {editingDays && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
+          backdropFilter: "blur(4px)", display: "flex",
+          alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16,
+        }}>
+          <div style={{
+            background: "#fff", border: `1px solid ${BORDER}`,
+            borderRadius: 20, width: "100%", maxWidth: 380, padding: 28,
+            display: "flex", flexDirection: "column", gap: 20,
+          }}>
+            <div>
+              <h2 style={{ fontFamily: "var(--font-serif)", fontSize: 20, color: TEXT, marginBottom: 4 }}>
+                Training days
+              </h2>
+              <p style={{ fontSize: 13, color: MUTED }}>
+                Select days you can train. Future sessions will be regenerated.
+              </p>
+            </div>
+
+            <div>
+              <p style={{ ...labelStyle, marginBottom: 10 }}>Training days (pick 2–6)</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {ALL_DAYS.map(day => {
+                  const selected = draftDays.includes(day);
+                  return (
+                    <button
+                      key={day}
+                      onClick={() => {
+                        if (selected) {
+                          const next = draftDays.filter(d => d !== day);
+                          setDraftDays(next);
+                          if (draftLongRun === day && next.length > 0) setDraftLongRun(next[next.length - 1]);
+                        } else {
+                          setDraftDays([...draftDays, day]);
+                        }
+                      }}
+                      style={{
+                        padding: "6px 12px", borderRadius: 8, fontSize: 13, fontWeight: 500,
+                        cursor: "pointer", fontFamily: "var(--font-sans)",
+                        textTransform: "capitalize",
+                        background: selected ? TERRA_BG : "oklch(0.97 0.008 80)",
+                        border: `1px solid ${selected ? TERRA_CLR : BORDER}`,
+                        color: selected ? TERRA_CLR : MUTED,
+                      }}
+                    >
+                      {day.slice(0, 3)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {draftDays.length > 0 && (
+              <div>
+                <p style={{ ...labelStyle, marginBottom: 10 }}>Long run day</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {draftDays.map(day => (
+                    <button
+                      key={day}
+                      onClick={() => setDraftLongRun(day)}
+                      style={{
+                        padding: "6px 12px", borderRadius: 8, fontSize: 13, fontWeight: 500,
+                        cursor: "pointer", fontFamily: "var(--font-sans)",
+                        textTransform: "capitalize",
+                        background: draftLongRun === day ? TERRA_BG : "oklch(0.97 0.008 80)",
+                        border: `1px solid ${draftLongRun === day ? TERRA_CLR : BORDER}`,
+                        color: draftLongRun === day ? TERRA_CLR : MUTED,
+                      }}
+                    >
+                      {day.slice(0, 3)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {draftDays.length < 2 && (
+              <p style={{ fontSize: 12, color: "#ef4444" }}>Select at least 2 days.</p>
+            )}
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => setEditingDays(false)}
+                style={{
+                  flex: 1, padding: "11px 0", borderRadius: 12,
+                  border: `1px solid ${BORDER}`, background: "oklch(0.97 0.008 80)",
+                  color: MUTED, fontSize: 14, fontWeight: 500, cursor: "pointer",
+                  fontFamily: "var(--font-sans)",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveTrainingDays}
+                disabled={savingDays || draftDays.length < 2 || !draftDays.includes(draftLongRun)}
+                style={{
+                  flex: 1, padding: "11px 0", borderRadius: 12,
+                  border: "none", background: TERRA_CLR, color: "#fff",
+                  fontSize: 14, fontWeight: 500, cursor: "pointer",
+                  fontFamily: "var(--font-sans)",
+                  opacity: (savingDays || draftDays.length < 2 || !draftDays.includes(draftLongRun)) ? 0.5 : 1,
+                }}
+              >
+                {savingDays ? "Saving…" : "Save & regenerate"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Link modal */}
       {linkingActivity && (
